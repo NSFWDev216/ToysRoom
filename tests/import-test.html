@@ -1,0 +1,32 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Pattern import tests</title>
+<pre id="out">running…</pre>
+<script type="module">
+// Open this page from the site (e.g. http://localhost:8000/tests/import-test.html).
+import {parsePattern, makePattern, patternOutputs, durationOf} from '../js/library.js'
+const out = []
+const check = (name, ok, info = '') => out.push(`${ok ? 'PASS' : 'FAIL'}  ${name}  ${info}`)
+async function run() {
+  // 1. XToys "generic output, 1 channel" export: bare {"at","pos"} list, 2 hours long
+  const text = await (await fetch('xtoys-generic-output.txt')).text()
+  let t0 = performance.now()
+  const p = makePattern(parsePattern(text, 'xtoys.txt'), 'XToys generic')
+  const ms = performance.now() - t0
+  check('XToys bare action list imports', true, `${p.source}, ${durationOf(p) / 60 | 0} min, step ${p.step} ms, ${p.frames.m.length} frames, ${ms.toFixed(0)} ms`)
+  check('2 hour pattern is kept whole', durationOf(p) >= 7199)
+  check('import is fast (< 500 ms)', ms < 500, ms.toFixed(0) + ' ms')
+  const at = s => Math.round(patternOutputs(p, s * 1000).m * 100)
+  const near = (a, b) => Math.abs(a - b) <= 3
+  check("level follows the curve", near(at(0), 0) && near(at(5), 50) && near(at(12), 100) && near(at(17.5), 50) && near(at(22), 0), `0s=${at(0)} 5s=${at(5)} 12s=${at(12)} 17.5s=${at(17.5)} 22s=${at(22)}`)
+  // 2. same list with a trailing comma and wrapped in [ ]
+  check('trailing comma', !!parsePattern(text + ','))
+  check('wrapped in [ ]', !!parsePattern('[' + text + ']'))
+  // 3. regular funscript still means strokes
+  const fs = JSON.stringify({actions: Array.from({length: 20}, (_, i) => ({at: i * 300, pos: i % 2 ? 90 : 10}))})
+  check('fast funscript -> strokes', parsePattern(fs).source === 'Funscript')
+  document.getElementById('out').textContent = out.join('\n')
+  window.testResults = out
+}
+run().catch(e => { document.getElementById('out').textContent = 'ERROR ' + e.stack; window.testResults = ['FAIL ' + e.message] })
+</script>

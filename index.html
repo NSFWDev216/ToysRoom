@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cut">
+<meta name="robots" content="noindex">
+<meta name="rating" content="adult">
+<meta name="theme-color" content="#140d1c">
+<title>Toy Rooms</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23ff4f9a'/%3E%3Cpath d='M9 18c2-6 12-6 14 0' stroke='%23fff' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<!-- Age gate -->
+<div id="gate" class="gate" role="dialog" aria-modal="true" aria-labelledby="gate-title">
+  <div class="gate-card">
+    <div class="logo big">Toy Rooms</div>
+    <h1 id="gate-title">Adults only (18+)</h1>
+    <p>This site is for adults who want to share control of their own connected toys with other consenting adults. It contains sexual content.</p>
+    <label class="check"><input type="checkbox" id="gate-age"> I am 18 or older (or the age of majority where I live).</label>
+    <label class="check"><input type="checkbox" id="gate-consent"> I will only connect my own toys and I understand anyone with the controls can operate them. I can stop my toys at any time.</label>
+    <div class="row gap">
+      <button id="gate-enter" class="btn primary" disabled>Enter</button>
+      <a class="btn ghost" href="https://www.google.com" rel="noreferrer">Leave</a>
+    </div>
+  </div>
+</div>
+
+<header class="top">
+  <button class="logo" id="home-btn" title="Lobby">Toy Rooms</button>
+  <div class="top-right">
+    <span id="net-pill" class="pill" title="How peers find each other">P2P</span>
+    <button id="name-btn" class="btn small ghost" title="My profile"><span id="name-avatar">👤</span> <span id="name-label">Guest</span></button>
+    <button id="toys-btn" class="btn small" title="Connect your toys">🔌 My toys <span id="toy-count" class="badge">0</span></button>
+  </div>
+</header>
+
+<main>
+<!-- Lobby -->
+<section id="lobby" class="view">
+  <div class="hero card">
+    <h2>Join with an invite code</h2>
+    <form id="join-form" class="row gap wrap">
+      <input id="join-code" class="grow code-input" placeholder="e.g. K7Q2M9XA" autocomplete="off" autocapitalize="characters" maxlength="16" aria-label="Invite code">
+      <button class="btn primary">Join</button>
+    </form>
+    <div class="row gap wrap center-mobile">
+      <button id="create-open" class="btn">＋ Create a room</button>
+      <button id="toys-open2" class="btn ghost">🔌 Set up my toys first</button>
+    </div>
+  </div>
+
+  <form id="create-form" class="card hidden">
+    <h2>Create a room</h2>
+    <label>Room name <input id="c-name" maxlength="40" placeholder="Friday night" required></label>
+    <label>Topic (optional) <input id="c-topic" maxlength="80" placeholder="Slow and teasing, all toys welcome"></label>
+    <div class="grid2">
+      <label>Max people <input id="c-max" type="number" min="2" max="50" value="8"></label>
+      <label>Control turn
+        <select id="c-turn">
+          <option value="30">30 seconds</option>
+          <option value="60">1 minute</option>
+          <option value="120" selected>2 minutes</option>
+          <option value="300">5 minutes</option>
+          <option value="600">10 minutes</option>
+          <option value="1800">30 minutes</option>
+        </select>
+      </label>
+    </div>
+    <div class="grid2">
+      <label>Controllers at once
+        <select id="c-ctrls">
+          <option value="1" selected>1 (everyone shares one)</option>
+          <option value="2">2</option><option value="3">3</option><option value="4">4</option>
+          <option value="5">5</option><option value="6">6</option><option value="8">8</option><option value="10">10</option>
+        </select>
+      </label>
+      <label class="check" style="align-self:end"><input type="checkbox" id="c-rotate" checked> Rotate controllers on a timer</label>
+    </div>
+    <p class="muted small">With more than one controller, everyone else is split evenly between them.</p>
+    <label class="check"><input type="checkbox" id="c-private"> Private: hide from the public list, invite code only</label>
+    <div class="row gap">
+      <button class="btn primary">Create &amp; enter</button>
+      <button type="button" id="create-cancel" class="btn ghost">Cancel</button>
+    </div>
+  </form>
+
+  <div id="recent-card" class="card hidden">
+    <h2>Recent rooms</h2>
+    <div id="recent-list" class="row gap wrap"></div>
+  </div>
+
+  <div class="card">
+    <div class="row between">
+      <h2>Public rooms</h2>
+      <span id="lobby-status" class="muted small">Looking for rooms…</span>
+    </div>
+    <div id="room-list" class="room-list"></div>
+  </div>
+</section>
+
+<!-- Room -->
+<section id="room" class="view hidden">
+  <div class="room-head card">
+    <div class="grow">
+      <h2 id="r-name">Room</h2>
+      <div class="muted small" id="r-topic"></div>
+      <div class="row gap wrap small">
+        <span id="r-private" class="pill hidden">🔒 Private</span>
+        <span class="pill">Code <b id="r-code" class="mono"></b></span>
+        <span class="pill" id="r-count">1/8</span>
+      </div>
+    </div>
+    <div class="col gap-s">
+      <button id="v-join" class="btn small primary" title="Talk with everyone in the room">🎙 Join voice</button>
+      <div id="v-controls" class="row gap-s hidden">
+        <button id="v-mic" class="btn small" title="Mute / unmute my microphone">🎤 On</button>
+        <button id="v-leave" class="btn small ghost" title="Leave voice chat">✕</button>
+      </div>
+      <button id="r-invite" class="btn small">🔗 Copy invite</button>
+      <button id="r-leave" class="btn small ghost">Leave</button>
+    </div>
+  </div>
+
+  <div class="turn card">
+    <div class="row between wrap gap">
+      <div><span class="muted small" id="t-label">Controller</span><div id="t-who" class="t-who">Waiting…</div></div>
+      <div class="row gap wrap">
+        <label class="check small"><input type="checkbox" id="t-wants" checked> Take turns</label>
+        <button id="t-pass" class="btn small hidden">Pass control</button>
+        <button id="t-skip" class="btn small ghost hidden" title="Host: rotate to the next controllers now">Rotate now</button>
+        <button id="t-shuffle" class="btn small ghost hidden" title="Host: give every controller seat to new, randomly picked people">🔀 Shuffle</button>
+      </div>
+    </div>
+    <div class="timebar"><div id="t-bar"></div></div>
+    <div class="muted small" id="t-left"></div>
+  </div>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="control">🎛 Control</button>
+    <button class="tab" data-tab="chat">💬 Chat <span id="chat-badge" class="badge hidden">0</span></button>
+    <button class="tab" data-tab="people">👥 People</button>
+  </nav>
+
+  <div class="room-grid">
+    <div class="pane" data-pane="control">
+      <div class="card live">
+        <div class="row between"><b>Room level</b><span id="lvl-src" class="muted small"></span></div>
+        <div class="meter"><div id="lvl-bar"></div><span id="lvl-num">0%</span></div>
+        <div id="lvl-chans" class="chan-bars"></div>
+        <div class="row gap wrap">
+          <label class="grow small">My max <span id="cap-num">100%</span><input id="cap" type="range" min="0" max="100" value="100"></label>
+          <button id="panic" class="btn danger">⏸ Pause my toys</button>
+        </div>
+        <div class="muted small" id="my-toys-line">No toys connected. Tap “My toys”.</div>
+      </div>
+
+      <div class="card control" id="control-card">
+        <div class="locked" id="locked">Wait for your turn to take the controls.<br><span class="muted small" id="locked-sub">You’ll get them automatically when the timer rotates.</span></div>
+        <div class="ctl-top">
+        <div class="seg" role="tablist">
+          <button class="seg-btn active" data-mode="manual">Manual</button>
+          <button class="seg-btn" data-mode="pattern">Patterns</button>
+          <button class="seg-btn" data-mode="music">Music</button>
+          <button class="seg-btn" data-mode="screen">Screen</button>
+        </div>
+        <button id="keys-btn" class="btn small ghost" title="Keyboard shortcuts">⌨</button>
+        <button id="pad-btn" class="btn small ghost" title="Gamepad">🎮<span id="pad-dot" class="pad-dot hidden"></span></button>
+        </div>
+
+        <div class="mode" data-mode-pane="manual">
+          <div class="manual">
+            <div class="main-fader-wrap"><div class="f-label">Main</div><div id="main-fader"></div></div>
+            <div class="col gap-s">
+              <div class="big-num" id="slider-num">0%</div>
+              <div class="presets">
+                <button class="btn small" data-preset="100">Max</button>
+                <button class="btn small" data-preset="75">75%</button>
+                <button class="btn small" data-preset="50">50%</button>
+                <button class="btn small" data-preset="25">25%</button>
+                <button class="btn small ghost" data-preset="0">Off</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="desk" id="desk">
+          <div class="row between wrap gap">
+            <b>🎚 Features</b>
+            <label class="check small"><input type="checkbox" id="show-all-feats"> Show all features</label>
+          </div>
+          <p class="muted small" id="desk-hint">🔗 Linked features follow the main level (manual, pattern or music). Drag any fader to set it by hand; tap 🔗 to link it again.</p>
+          <div id="mixer" class="mixer"></div>
+          <div class="range-box" id="range-box">
+            <div class="row between wrap gap">
+              <b class="small">🎛 Stroker control</b>
+              <div class="seg two" id="stroker-mode" role="radiogroup" aria-label="Stroker control">
+                <button type="button" class="sm-btn active" data-sm="speed" role="radio" aria-checked="true">🔁 Speed + range</button>
+                <button type="button" class="sm-btn" data-sm="pos" role="radio" aria-checked="false">📍 Position</button>
+              </div>
+            </div>
+            <p class="muted small" id="stroker-hint"></p>
+            <div class="row between"><b class="small">↕️ Stroke range</b><span id="range-num" class="muted small">0–100%</span></div>
+            <div id="range-bar"></div>
+            <div class="row between muted small"><span>bottom</span><span>drag an end, or drag the middle to slide the window</span><span>top</span></div>
+          </div>
+        </div>
+
+        <div class="mode hidden" data-mode-pane="pattern">
+          <div id="pattern-grid" class="pattern-grid"></div>
+          <div class="row between"><b class="small">My pattern library</b><span class="muted small" id="lib-count"></span></div>
+          <div id="library-grid" class="pattern-grid lib"></div>
+          <div class="row gap wrap">
+            <label class="btn small">📂 Import file<input id="lib-file" type="file" accept=".funscript,.json,.txt,.csv,.lovense,.pattern,application/json,text/plain" hidden></label>
+            <button id="lib-url" class="btn small">🔗 From link</button>
+            <button id="lib-paste" class="btn small">📋 Paste</button>
+            <button id="rec-btn" class="btn small">⏺ Record</button>
+            <button id="lib-browse" class="btn small">🌐 Browse</button>
+          </div>
+          <p class="muted small">Imports Funscripts (Handy, XToys, EroScripts and others), Lovense pattern files and simple number lists. Saved only in this browser.</p>
+          <label class="small">Speed <span id="p-speed-num">1.0×</span><input id="p-speed" type="range" min="25" max="300" value="100"></label>
+          <label class="small">Strength <span id="p-max-num">100%</span><input id="p-max" type="range" min="5" max="100" value="100"></label>
+          <button id="p-stop" class="btn ghost small">Stop pattern</button>
+        </div>
+
+        <div class="mode hidden" data-mode-pane="screen">
+          <p class="muted small">Share a browser tab, a window or your whole screen <b>with its sound</b> (YouTube, Spotify, a game, anything). The people you control see and hear it, and their toys follow the sound. A 📺 live feed with “Toys follow the feed’s sound” on also drives the toys from this mode.</p>
+          <div class="row gap wrap">
+            <button id="s-start" class="btn primary">🖥 Share screen with sound</button>
+            <button id="s-stop" class="btn ghost" disabled>⏹ Stop sharing</button>
+          </div>
+          <div class="muted small" id="s-now"></div>
+          <p class="muted small" id="s-unsupported" hidden>This browser can’t share its screen. Use Chrome, Edge or Firefox on a computer; most phones and tablets can only watch.</p>
+          <label class="check small"><input type="checkbox" id="s-video" checked> Let them see the picture too (untick to share only the sound)</label>
+          <label class="small">Sensitivity <span id="s-sens-num">1.0×</span><input id="s-sens" type="range" min="30" max="300" value="100"></label>
+          <div class="row gap wrap small">
+            <label class="check"><input type="radio" name="s-focus" value="bass" checked> Follow bass</label>
+            <label class="check"><input type="radio" name="s-focus" value="full"> Whole sound</label>
+          </div>
+          <p class="muted small">Tip: in Chrome or Edge pick a <b>tab</b> and keep “Share tab audio” on. Sharing a window often has no sound; sharing the entire screen has sound on Windows and ChromeOS.</p>
+        </div>
+
+        <div class="mode hidden" data-mode-pane="music">
+          <p class="muted small">Toys follow the beat of your music. Pick a song from your device or use your microphone.</p>
+          <div class="row gap wrap">
+            <label class="btn">🎵 Choose song<input id="m-file" type="file" accept="audio/*" hidden></label>
+            <button id="m-mic" class="btn">🎤 Use mic</button>
+            <button id="m-pause" class="btn ghost" disabled>⏯</button>
+            <button id="m-stop" class="btn ghost" disabled>⏹</button>
+          </div>
+          <div class="muted small" id="m-now"></div>
+          <div class="dj" id="m-dj">
+            <div class="row gap center">
+              <button id="m-back" class="btn small ghost" title="Back 10 seconds">⏪ 10</button>
+              <span id="m-time" class="mono small">0:00</span>
+              <input id="m-seek" class="grow" type="range" min="0" max="1000" value="0" aria-label="Song position" disabled>
+              <span id="m-dur" class="mono small">0:00</span>
+              <button id="m-fwd" class="btn small ghost" title="Forward 10 seconds">10 ⏩</button>
+            </div>
+            <label class="small">🔊 My volume <span id="m-vol-num">100%</span><input id="m-vol" type="range" min="0" max="100" value="100"></label>
+          </div>
+          <div class="row gap wrap small">
+            <label class="check"><input type="checkbox" id="m-beat"> Pulse to a tempo</label>
+            <label class="check">BPM <input id="m-bpm" type="number" min="40" max="220" value="120" aria-label="Beats per minute" style="width:5.5em"></label>
+            <button id="m-taptempo" class="btn small ghost">👆 Tap tempo</button>
+          </div>
+          <p class="muted small">Want YouTube, Spotify or any other player? Use the 🖥 Screen mode: share that tab with its sound and the toys follow it.</p>
+          <label class="small">Sensitivity <span id="m-sens-num">1.0×</span><input id="m-sens" type="range" min="30" max="300" value="100"></label>
+          <div class="row gap wrap small">
+            <label class="check"><input type="radio" name="m-focus" value="bass" checked> Follow bass</label>
+            <label class="check"><input type="radio" name="m-focus" value="full"> Whole song</label>
+          </div>
+          <div class="row gap wrap small">
+            <label class="check"><input type="checkbox" id="m-share" checked> Let them hear my music</label>
+            <select id="m-scope" aria-label="Who hears my music">
+              <option value="group">Only the people I control</option>
+              <option value="room">Everyone in the room</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <audio id="room-audio" autoplay playsinline></audio>
+      <button id="listen-btn" class="btn hidden">🔊 Tap to hear the room’s music</button>
+
+      <div class="card np hidden" id="np-card">
+        <div class="row between wrap gap"><b>🎵 Now playing</b><span id="np-from" class="muted small"></span></div>
+        <div id="np-title" class="muted small"></div>
+        <button id="np-tap" class="btn primary hidden">🔊 Tap to play the music</button>
+        <div class="row gap center">
+          <span id="np-time" class="mono small"></span>
+          <label class="small grow">🔊 My volume <span id="np-vol-num">100%</span><input id="np-vol" type="range" min="0" max="100" value="100"></label>
+        </div>
+      </div>
+
+      <div class="card feed-card hidden" id="feed-card">
+        <div class="row between wrap gap"><b>📺 Live feed for the people I control</b><span id="feed-state" class="muted small"></span></div>
+        <div class="row gap wrap">
+          <input id="feed-link" class="grow" placeholder="YouTube, Twitch, video link or any web page" aria-label="Live feed link" autocomplete="off" spellcheck="false">
+          <button id="feed-go" class="btn small primary">📺 Show them</button>
+        </div>
+        <div class="row gap wrap">
+          <label class="btn small">📂 Share a video file<input id="feed-file" type="file" accept="video/*" hidden></label>
+          <button id="feed-stop" class="btn small ghost" disabled>⏹ Stop feed</button>
+        </div>
+        <label class="check small"><input type="checkbox" id="feed-follow" checked> 🎚 Toys follow the feed’s sound (as I hear it)</label>
+        <p class="muted small" id="feed-follow-note">For a link, your browser asks to share <b>this tab</b>: allow it with “Share tab audio” on (Chrome or Edge on a computer). The toys of the people you control then follow what you hear, in 🖥 Screen mode. Video files need no extra step.</p>
+        <div class="row gap wrap">
+          <input id="sc-link" class="grow" placeholder="Scrolller category link, e.g. https://scrolller.com/name_1a2b3c4d" aria-label="Scrolller category link" autocomplete="off" spellcheck="false">
+          <button id="sc-go" class="btn small primary">🖼 Show them</button>
+          <button id="sc-stop" class="btn small ghost" disabled>⏹</button>
+        </div>
+        <p class="muted small">Video files are streamed straight from your device to the people you control, nobody else. Some sites (for example Google or banks) refuse to be shown inside other sites; those show a link instead.</p>
+      </div>
+    </div>
+
+    <div class="pane hidden-mobile" data-pane="chat">
+      <div class="card chat">
+        <div id="chat-log" class="chat-log" aria-live="polite"></div>
+        <form id="chat-form" class="row gap">
+          <input id="chat-input" class="grow" maxlength="500" placeholder="Say something…" autocomplete="off" aria-label="Chat message">
+          <button class="btn primary">Send</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="pane hidden-mobile" data-pane="people">
+      <div class="card">
+        <h3>People <span id="p-count" class="muted"></span></h3>
+        <ul id="people" class="people"></ul>
+        <div id="host-tools" class="hidden">
+          <h3>Room settings (you’re host)</h3>
+          <div class="grid2">
+            <label>Max people <input id="h-max" type="number" min="2" max="50"></label>
+            <label>Turn (seconds) <input id="h-turn" type="number" min="15" max="1800"></label>
+            <label>Controllers <input id="h-ctrls" type="number" min="1" max="10"></label>
+            <label class="check" style="align-self:end"><input type="checkbox" id="h-rotate"> Rotate on a timer</label>
+          </div>
+          <button id="h-save" class="btn small">Save</button>
+          <div class="pick-box">
+            <b class="small">Who can control</b>
+            <p class="muted small" id="pick-note"></p>
+            <button id="pick-clear" class="btn small ghost hidden">Let everyone take turns</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<!-- Browse patterns -->
+<div id="browse-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="browse-title">
+  <div class="modal-card wide">
+    <div class="row between"><h2 id="browse-title">Browse patterns</h2><button type="button" id="browse-close" class="btn small ghost" aria-label="Close">✕</button></div>
+    <div class="row gap wrap">
+      <select id="browse-source" class="grow" aria-label="Pattern source"></select>
+      <input id="browse-q" class="grow" placeholder="Search patterns" aria-label="Search">
+    </div>
+    <p id="browse-note" class="muted small"></p>
+    <div id="browse-list" class="browse-list"></div>
+    <div id="browse-embed" class="browse-embed hidden">
+      <div class="row between wrap gap small">
+        <span class="muted">Browse on XToys, then bring the pattern here ↓</span>
+        <a id="embed-open" class="btn small ghost" target="_blank" rel="noopener noreferrer">↗ Open in new tab</a>
+      </div>
+      <iframe id="embed-frame" title="XToys patterns" referrerpolicy="no-referrer" allow="clipboard-write; fullscreen"></iframe>
+      <div id="embed-drop" class="embed-drop" tabindex="0">
+        <b>Drop a pattern file here</b>
+        <span class="muted small">or</span>
+        <div class="row gap wrap center">
+          <button type="button" id="embed-clip" class="btn small primary">📋 Paste from clipboard</button>
+          <label class="btn small">📂 Choose file<input id="embed-file" type="file" accept=".funscript,.json,.txt,.csv,.lovense,.pattern,application/json,text/plain" hidden></label>
+        </div>
+        <textarea id="embed-text" rows="3" placeholder="…or paste the pattern data here (Ctrl/Cmd+V)" aria-label="Pattern data"></textarea>
+        <div class="row gap"><input id="embed-name" class="grow" placeholder="Name for this pattern" maxlength="40" aria-label="Pattern name"><button type="button" id="embed-save" class="btn small primary">＋ Save</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Shortcuts -->
+<div id="feed-mini" class="feed-mini hidden" role="region" aria-label="Live feed">
+  <div class="fm-head">
+    <span id="fm-title" class="grow small">📺 Live feed</span>
+    <a id="fm-open" class="btn small ghost" target="_blank" rel="noopener noreferrer" title="Open in new tab">↗</a>
+    <button id="fm-size" class="btn small ghost" title="Bigger / smaller">⤢</button>
+    <button id="fm-hide" class="btn small ghost" title="Hide for me">✕</button>
+  </div>
+  <div id="fm-body" class="fm-body"></div>
+  <div class="fm-foot row gap center">
+    <button id="fm-tap" class="btn small primary hidden">🔊 Tap to play</button>
+    <span id="fm-volbox" class="row gap center grow">
+      <button id="fm-mute" class="btn small ghost" title="Mute / unmute for me">🔊</button>
+      <label class="small grow"><input id="fm-vol" type="range" min="0" max="100" value="100" aria-label="Feed volume (only for me)"></label>
+      <span id="fm-vol-num" class="small muted">100%</span>
+    </span>
+    <span id="fm-volnote" class="small muted hidden">🔊 Use the player’s own sound controls</span>
+  </div>
+</div>
+<button id="fm-show" class="btn small fm-show hidden">📺 Show live feed</button>
+
+<div id="sc-mini" class="feed-mini sc-mini hidden" role="region" aria-label="Scrolller preview">
+  <div class="fm-head">
+    <span id="sc-title" class="grow small">🖼 Scrolller</span>
+    <button id="sc-view" class="btn small ghost" title="Switch between the live page and a simple card">🃏</button>
+    <a id="sc-full" class="btn small ghost" target="_blank" rel="noopener noreferrer" title="Full screen on Scrolller (new tab)">↗ Full</a>
+    <button id="sc-size" class="btn small ghost" title="Bigger / smaller">⤢</button>
+    <button id="sc-hide" class="btn small ghost" title="Hide for me">✕</button>
+  </div>
+  <div id="sc-body" class="sc-body"></div>
+  <div class="fm-foot small muted row gap center">
+    <label class="check grow"><input type="checkbox" id="sc-auto"> Open Scrolller previews automatically</label>
+  </div>
+</div>
+<button id="sc-show" class="btn small sc-show hidden">🖼 Scrolller preview</button>
+
+<div id="pad-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="pad-title">
+  <div class="modal-card">
+    <div class="row between"><h2 id="pad-title">🎮 Gamepad</h2><button type="button" id="pad-close" class="btn small ghost" aria-label="Close">✕</button></div>
+    <p id="pad-status" class="small"></p>
+    <label class="check"><input type="checkbox" id="pad-enabled"> Gamepad controls on</label>
+    <label class="check"><input type="checkbox" id="pad-rumble"> Rumble my pad with my toy level</label>
+    <div class="grid2">
+      <label>Dead zone <span id="pad-dz-num"></span><input id="pad-dz" type="range" min="0" max="50"></label>
+      <label>Stick speed <span id="pad-speed-num"></span><input id="pad-speed" type="range" min="20" max="300"></label>
+    </div>
+    <h3 class="small">Sticks and triggers</h3>
+    <p class="muted small">Tap a box, then move the stick or press the trigger you want. Moving a stick up gives “reversed” on most pads, which is what you want for “up = more”.</p>
+    <div id="pad-analog" class="keys-list"></div>
+    <h3 class="small">Buttons</h3>
+    <div id="pad-buttons" class="keys-list"></div>
+    <button id="pad-reset" class="btn small ghost">Reset to defaults</button>
+  </div>
+</div>
+
+<div id="keys-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="keys-title">
+  <div class="modal-card">
+    <div class="row between"><h2 id="keys-title">Keyboard shortcuts</h2><button type="button" id="keys-close" class="btn small ghost" aria-label="Close">✕</button></div>
+    <label class="check"><input type="checkbox" id="keys-enabled"> Shortcuts on</label>
+    <p class="muted small">Tap a key box, then press the key or combination you want. Backspace clears it. Hold a key down to keep changing the value. Saved in this browser.</p>
+    <div class="grid3">
+      <label>Main step % <input id="step-main" type="number" min="1" max="50"></label>
+      <label>Range step % <input id="step-range" type="number" min="1" max="20"></label>
+      <label>Feature step % <input id="step-feature" type="number" min="1" max="50"></label>
+    </div>
+    <div id="keys-list" class="keys-list"></div>
+    <button id="keys-reset" class="btn small ghost">Reset to defaults</button>
+  </div>
+</div>
+
+<!-- Profile -->
+<div id="profile-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="pf-title">
+  <form id="profile-form" class="modal-card">
+    <div class="row between"><h2 id="pf-title">My profile</h2><button type="button" id="pf-close" class="btn small ghost" aria-label="Close">✕</button></div>
+    <p class="muted small">No sign-in needed. Your profile and ID are saved only in this browser. Export it to use the same profile on another device.</p>
+    <label>Display name <input id="pf-name" maxlength="24" required></label>
+    <div class="grid2">
+      <label>Gender <select id="pf-gender"></select></label>
+      <label id="pf-custom-wrap" class="hidden">Describe <input id="pf-custom" maxlength="24"></label>
+    </div>
+    <label>I like to <select id="pf-role"></select></label>
+    <div class="label">Avatar</div>
+    <div id="pf-avatars" class="avatars"></div>
+    <label>Name colour <input id="pf-color" type="color"></label>
+    <label>About me <input id="pf-about" maxlength="140" placeholder="Optional, shown to people in your rooms"></label>
+    <div class="muted small">My ID: <span id="pf-uid" class="mono"></span></div>
+    <div class="row gap wrap" style="margin-top:.8rem">
+      <button class="btn primary">Save</button>
+      <button type="button" id="pf-export" class="btn small ghost">⬇ Export</button>
+      <label class="btn small ghost">⬆ Import<input id="pf-import" type="file" accept="application/json,.json" hidden></label>
+    </div>
+  </form>
+</div>
+
+<!-- My toys drawer -->
+<aside id="drawer" class="drawer" aria-hidden="true">
+  <div class="drawer-card">
+    <div class="row between"><h2>My toys</h2><button id="drawer-close" class="btn small ghost" aria-label="Close">✕</button></div>
+    <p class="muted small">Toys connect from this device only. Your connection details stay in this browser and are never sent to the room.</p>
+    <div id="toy-list" class="toy-list"></div>
+    <form id="toy-form" class="card inset">
+      <label>Add a toy
+        <select id="toy-type"></select>
+      </label>
+      <p id="toy-help" class="muted small"></p>
+      <div id="toy-fields"></div>
+      <button class="btn primary">Connect</button>
+    </form>
+  </div>
+</aside>
+
+<div id="toast" class="toast" role="status"></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
