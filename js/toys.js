@@ -163,13 +163,33 @@ class LovenseLocal extends Toy {
 }
 
 // ---------------- Lovense: direct Bluetooth (Chrome / Edge / Android) ----------------
+// Lovense toys use one of these GATT services. Newer toys use "XY300001-002Z-4bd4-..."
+// where XY and Z vary by model and firmware, so every combination is listed: Chrome only
+// lets the page open services it named up front.
 const LOVENSE_SERVICES = (() => {
   const s = ['0000fff0-0000-1000-8000-00805f9b34fb', '6e400001-b5a3-f393-e0a9-e50e24dcca9e']
-  for (let c = 0x40; c <= 0x5a; c++) {
-    for (const mid of ['0023', '0024']) s.push(`${c.toString(16)}300001-${mid}-4bd4-bbd5-a6920e4c5653`)
+  for (let c = 0; c <= 0xff; c++) {
+    for (const mid of ['0023', '0024', '0025']) s.push(`${c.toString(16).padStart(2, '0')}300001-${mid}-4bd4-bbd5-a6920e4c5653`)
   }
   return s
 })()
+
+// Turns Web Bluetooth's terse errors into something people can act on.
+function bleError(e) {
+  const m = e?.message || String(e)
+  switch (e?.name) {
+    case 'NotFoundError':
+      return /cancel/i.test(m) ? 'No toy was picked. Tap Connect again and choose your toy (it shows as LVS-…).'
+        : 'No Lovense toy found. Turn the toy on, and close Lovense Remote / Lovense Connect on every phone and computer: a toy can only connect to one app at a time.'
+    case 'SecurityError': return 'Bluetooth is blocked here. The site must be opened over https:// (or localhost), and not inside another site.'
+    case 'NotSupportedError': return 'This toy uses a Bluetooth service the browser could not open. Try Lovense Remote’s Game Mode or Intiface Central instead.'
+    case 'NetworkError': return 'The toy stopped answering. Move it closer, make sure no Lovense app is connected to it, then try again.'
+    case 'NotAllowedError': return 'Bluetooth permission was denied. Allow Bluetooth for this site in the browser’s site settings.'
+    case 'InvalidStateError': return 'Bluetooth is busy. Wait a moment and try again.'
+  }
+  return m
+}
+
 // First letter(s) of the "DeviceType;" reply
 const BLE_TYPES = {A: {model: 'Nora', features: ['vibrate', 'rotate']}, C: {model: 'Nora', features: ['vibrate', 'rotate']}, B: {model: 'Max', features: ['vibrate', 'pump']}}
 
@@ -177,17 +197,35 @@ class LovenseBLE extends Toy {
   static label = 'Lovense (Bluetooth, Chrome)'
   static kind = 'lovense-ble'
   async connect() {
-    if (!navigator.bluetooth) throw new Error('Web Bluetooth needs Chrome/Edge on desktop or Android')
+    try { await this.connectBle() } catch (e) {
+      try { this.device?.gatt?.disconnect() } catch {}
+      throw new Error(bleError(e))
+    }
+  }
+  async connectBle() {
+    if (!window.isSecureContext) throw new Error('Bluetooth only works when the site is opened over https:// or on localhost (not http:// with an IP address).')
+    if (!navigator.bluetooth) throw new Error('This browser has no Web Bluetooth. Use Chrome or Edge on Windows, macOS, Android or ChromeOS (on Linux turn on chrome://flags/#enable-experimental-web-platform-features). Safari and every iPhone/iPad browser can’t do this: use Lovense Remote’s Game Mode instead.')
+    if (navigator.bluetooth.getAvailability && !(await navigator.bluetooth.getAvailability().catch(() => true))) throw new Error('Bluetooth is off or this device has no Bluetooth adapter.')
     this.setStatus('connecting')
-    const device = await navigator.bluetooth.requestDevice({
-      filters: [{namePrefix: 'LVS-'}, {namePrefix: 'LOVE-'}],
+    // the picker must open straight from the tap, so nothing slow happens before this
+    const device = this.device || await navigator.bluetooth.requestDevice({
+      filters: [{namePrefix: 'LVS-'}, {namePrefix: 'LOVE-'}, {namePrefix: 'LV-'}],
       optionalServices: LOVENSE_SERVICES
     })
     this.device = device
-    device.addEventListener('gattserverdisconnected', () => this.setStatus('disconnected'))
-    const server = await device.gatt.connect()
+    device.addEventListener('gattserverdisconnected', () => { if (this.status === 'connected') this.setStatus('disconnected') })
+    // the first GATT connection often fails right after pairing: try a few times
+    let server = null
+    for (let i = 0; i < 3 && !server; i++) {
+      try { server = await device.gatt.connect() } catch (e) { if (i === 2) throw e; await new Promise(r => setTimeout(r, 600 * (i + 1))) }
+    }
     let tx = null, rx = null
-    for (const svc of await server.getPrimaryServices()) {
+    let services = []
+    try { services = await server.getPrimaryServices() } catch (e) {
+      if (e.name === 'NotFoundError' || e.name === 'SecurityError') throw Object.assign(new Error('This toy’s Bluetooth service is not one we know yet.'), {name: 'NotSupportedError'})
+      throw e
+    }
+    for (const svc of services) {
       for (const ch of await svc.getCharacteristics().catch(() => [])) {
         const u = ch.uuid
         if (/^.{4}0002-|^0000fff2-|^6e400002-/.test(u) && (ch.properties.write || ch.properties.writeWithoutResponse)) tx = ch
@@ -586,7 +624,7 @@ export const TOY_FIELDS = {
 export const TOY_HELP = {
   'sim': 'An on-screen toy. Great for trying rooms without hardware. Pick which kind of toy it pretends to be.',
   'lovense-local': 'Open Lovense Remote (or Lovense Connect), connect your toys, then open Discover > Game Mode and turn on "Enable LAN". Use the Local IP and HTTPS port it shows. Your phone and this device must be on the same Wi-Fi. Each toy gets the features it has (Nora rotates, Max pumps, Gravity thrusts, and so on).',
-  'lovense-ble': 'Connects straight to the toy over Bluetooth. Works in Chrome or Edge on desktop and Android (not iPhone). Close the Lovense app first so the toy is free.',
+  'lovense-ble': 'Connects straight to the toy over Bluetooth. Needs Chrome or Edge on Windows, macOS, Android or ChromeOS (not Safari, not iPhone/iPad), and the site opened over https:// or localhost. Turn the toy on and close Lovense Remote / Connect everywhere first: a toy only talks to one app at a time. Tap Connect, then pick the toy (LVS-…).',
   'handy': 'Turn on your Handy, put it in Wi-Fi mode, and copy the connection key from the Handy app or handyfeeling.com. The room controls stroke speed and stroke range, always inside your own limits below.',
   'handy-hsp': 'Smoother motion using the Handy Streaming Protocol (HSP). Uses the same connection key. If it fails on your firmware, use the plain connection-key option instead.',
   'intiface': 'Install Intiface Central (free) on your computer or Android, press Start Server, and connect any of the hundreds of toys it supports. Vibration, rotation, oscillation, constriction and strokers are all mapped.',

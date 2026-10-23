@@ -7,6 +7,15 @@ export const GENDERS = [
   'Prefer not to say', 'Woman', 'Man', 'Non-binary', 'Trans woman', 'Trans man',
   'Genderfluid', 'Genderqueer', 'Agender', 'Couple', 'Self-describe'
 ]
+// Gender groups a host can set room limits for (e.g. 4 men + 4 women).
+export const GENDER_BUCKETS = {women: 'Women', men: 'Men', couples: 'Couples', other: 'Non-binary & others'}
+export function genderBucket(gender) {
+  if (gender === 'Woman' || gender === 'Trans woman') return 'women'
+  if (gender === 'Man' || gender === 'Trans man') return 'men'
+  if (gender === 'Couple') return 'couples'
+  return 'other'
+}
+
 export const ROLES = {both: 'Gives & receives', give: 'Likes to control', receive: 'Likes to be controlled'}
 export const AVATARS = ['😈', '💋', '🔥', '🍑', '🍆', '💜', '🦊', '🐺', '🌙', '⭐', '🎧', '🌶️']
 

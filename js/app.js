@@ -2,12 +2,13 @@
 
 import {CONFIG} from './config.js'
 import {networkMode, relayCount} from './net.js'
-import {RoomSession, Lobby, makeCode, normalizeCode, cleanSettings} from './room.js'
+import {RoomSession, Lobby, makeCode, normalizeCode, cleanSettings, hasSpaceFor} from './room.js'
+import {Social} from './social.js'
 import {ToyManager, TOY_TYPES, TOY_FIELDS, TOY_HELP} from './toys.js'
 import {PATTERNS, patternLevel} from './patterns.js'
 import {MusicDriver} from './music.js'
 import {CHANNELS, CHANNEL_KEYS, FEATURE_LABELS, zeroOutputs, peakOf} from './features.js'
-import {loadProfile, saveProfile, publicProfile, genderLabel, rememberRoom, exportProfile, importProfile, GENDERS, ROLES, AVATARS} from './profile.js'
+import {loadProfile, saveProfile, publicProfile, genderLabel, rememberRoom, exportProfile, importProfile, GENDERS, ROLES, AVATARS, GENDER_BUCKETS, genderBucket} from './profile.js'
 import {Fader, RangeBar} from './controls.js'
 import {ACTIONS, DEFAULT_STEPS, loadKeys, saveKeys, defaultKeys, lookup, comboOf, prettyCombo} from './shortcuts.js'
 import {VoiceChat} from './voice.js'
@@ -52,6 +53,9 @@ const profile = loadProfile()
 const toys = new ToyManager()
 const music = new MusicDriver()
 const lobby = new Lobby()
+const social = new Social(profile)
+lobby.on('net', net => social.attach(net))
+lobby.on('closed', net => social.detach(net))
 const recorder = new Recorder()
 let library = loadLibrary()
 const voice = new VoiceChat()
@@ -126,6 +130,8 @@ $('#profile-form').onsubmit = e => {
   saveProfile(profile)
   renderNameBtn()
   session?.update({name: profile.name, profile: publicProfile(profile)})
+  social.announce()
+  renderRooms()
   $('#profile-modal').classList.add('hidden')
   toast('Profile saved in this browser')
 }
@@ -147,6 +153,7 @@ function showLobby() {
   $('#lobby').classList.remove('hidden')
   $('#room').classList.add('hidden')
   lobby.setAnnounce(null)
+  social.setRoom(null)
   lobby.open('browse').catch(e => { $('#lobby-status').textContent = 'Could not start: ' + e.message })
   renderRooms()
   renderRecent()
@@ -160,25 +167,72 @@ function lobbyStatus(count) {
   return (count ? `${count} active` : 'Listening for rooms…') + who + (networkMode !== 'local' ? ` · ${relays} relays` : '')
 }
 
+// gender limit inputs (create form and host tools)
+function fillSlots(sel, slots = {}) {
+  const box = $(sel)
+  if (!box.children.length) box.replaceChildren(...Object.entries(GENDER_BUCKETS).map(([b, label]) =>
+    el('label', {}, label, el('input', {type: 'number', min: 0, max: 50, placeholder: 'any', 'data-slot': b}))))
+  box.querySelectorAll('[data-slot]').forEach(i => { i.value = slots[i.dataset.slot] ?? '' })
+}
+function readSlots(sel) {
+  const out = {}
+  $(sel).querySelectorAll('[data-slot]').forEach(i => { if (i.value !== '') out[i.dataset.slot] = +i.value })
+  return out
+}
+fillSlots('#c-slots')
+
+const myBucket = () => genderBucket(profile.gender)
+function filteredRooms() {
+  const q = $('#rl-q').value.trim().toLowerCase()
+  const space = $('#rl-space').value, g = $('#rl-gender').value, sort = $('#rl-sort').value
+  let rooms = lobby.list().filter(r => {
+    if (q && !`${r.name} ${r.topic}`.toLowerCase().includes(q)) return false
+    if (space === 'space' && r.count >= r.maxPeople) return false
+    if (space === 'me' && !hasSpaceFor(r, myBucket())) return false
+    const lim = Object.keys(r.slots || {}).length > 0
+    if (g === 'limits' && !lim) return false
+    if (g === 'none' && lim) return false
+    return true
+  })
+  const free = r => r.maxPeople - r.count
+  rooms.sort(sort === 'quiet' ? (a, b) => a.count - b.count : sort === 'name' ? (a, b) => a.name.localeCompare(b.name)
+    : sort === 'space' ? (a, b) => free(b) - free(a) : (a, b) => b.count - a.count)
+  return rooms
+}
 function renderRooms() {
   const list = $('#room-list')
-  const rooms = lobby.list()
+  const all = lobby.list()
+  const rooms = filteredRooms()
   list.replaceChildren()
-  $('#lobby-status').textContent = lobbyStatus(rooms.length)
+  $('#lobby-status').textContent = lobbyStatus(all.length)
+  $('#rl-note').textContent = all.length && rooms.length !== all.length ? `Showing ${rooms.length} of ${all.length} rooms` : ''
   if (!rooms.length) {
-    list.append(el('div', {class: 'empty'}, 'No public rooms right now. Create one and invite friends!'))
+    list.append(el('div', {class: 'empty'}, all.length ? 'No rooms match. Change the search or filters.' : 'No public rooms right now. Create one and invite friends!'))
     return
   }
+  const mine = myBucket()
   for (const r of rooms) {
     const full = r.count >= r.maxPeople
+    const forMe = hasSpaceFor(r, mine)
+    const lims = Object.entries(r.slots || {})
     list.append(el('div', {class: 'room-item'},
       el('div', {class: 'row between'}, el('b', {}, r.name), el('span', {class: 'pill'}, `${r.count}/${r.maxPeople}`)),
       r.topic ? el('div', {class: 'muted small'}, r.topic) : null,
+      lims.length ? el('div', {class: 'gtags'}, lims.map(([b, n]) => el('span', {class: (r.gcount?.[b] || 0) >= n ? 'full' : ''}, `${GENDER_BUCKETS[b]} ${r.gcount?.[b] || 0}/${n}`))) : null,
       el('div', {class: 'row between'},
         el('span', {class: 'muted small'}, `${r.controllers > 1 ? `🎛 ${r.controllers} controllers · ` : ''}${r.rotate ? `⏱ ${fmtTime(r.turnSeconds * 1000)} turns` : 'fixed controllers'}`),
-        el('button', {class: 'btn small primary', disabled: full, onclick: () => enterRoom(r.code)}, full ? 'Full' : 'Join'))
+        el('button', {class: 'btn small primary', disabled: !forMe, title: !full && !forMe ? 'No free place for your gender (set in your profile)' : '', onclick: () => enterRoom(r.code)},
+          full ? 'Full' : forMe ? 'Join' : 'No place for you'))
     ))
   }
+}
+for (const id of ['#rl-q', '#rl-space', '#rl-gender', '#rl-sort']) $(id).addEventListener(id === '#rl-q' ? 'input' : 'change', renderRooms)
+$('#rl-random').onclick = () => {
+  const ok = lobby.list().filter(r => hasSpaceFor(r, myBucket()))
+  if (!ok.length) return toast(lobby.list().length ? 'No public room has a free place for you right now' : 'No public rooms right now. Create one!')
+  const r = ok[crypto.getRandomValues(new Uint32Array(1))[0] % ok.length]
+  toast(`Joining ${r.name}…`)
+  enterRoom(r.code)
 }
 lobby.on('rooms', () => { if (!session) renderRooms() })
 setInterval(() => { if (!session) $('#lobby-status').textContent = lobbyStatus(lobby.list().length) }, 2000)
@@ -202,8 +256,10 @@ $('#create-form').onsubmit = e => {
   const settings = cleanSettings({
     name: $('#c-name').value, topic: $('#c-topic').value,
     maxPeople: $('#c-max').value, turnSeconds: $('#c-turn').value, isPrivate: $('#c-private').checked,
-    controllers: $('#c-ctrls').value, rotate: $('#c-rotate').checked
+    controllers: $('#c-ctrls').value, rotate: $('#c-rotate').checked, slots: readSlots('#c-slots')
   })
+  const sum = Object.values(settings.slots).reduce((a, b) => a + b, 0)
+  if (Object.keys(settings.slots).length === 4 && sum < settings.maxPeople) toast(`Gender limits add up to ${sum}, so the room fills at ${sum}`)
   $('#create-form').classList.add('hidden')
   enterRoom(makeCode(), settings)
 }
@@ -217,7 +273,6 @@ async function enterRoom(code, settings) {
   if (session) leaveRoom(true)
   voice.reset()
   renderVoice()
-  lobby.close()
   $('#lobby').classList.add('hidden')
   $('#room').classList.remove('hidden')
   $('#chat-log').replaceChildren()
@@ -245,7 +300,7 @@ async function enterRoom(code, settings) {
   })
   s.on('sys', t => addChat({sys: true, text: t}))
   s.on('kicked', reason => {
-    toast(reason === 'full' ? 'That room is full' : 'You left the room')
+    toast(reason === 'full' ? 'That room is full' : reason === 'gender' ? 'That room has no free place for your gender right now' : 'You left the room')
     session = null
     afterLeave()
   })
@@ -296,11 +351,12 @@ function syncLobbyRole() {
   const pub = session.settings && !session.settings.isPrivate
   if (session.isHost && pub) {
     const s = session
-    lobby.open('host').then(() => { if (session === s) lobby.setAnnounce(() => ({code: s.code, ...s.settings, count: s.members.size})) })
-  } else if (lobby.mode === 'host') {
-    lobby.withdraw(session.code)
-    lobby.close()
+    lobby.open('host').then(() => { if (session === s) lobby.setAnnounce(() => ({code: s.code, ...s.settings, count: s.members.size, gcount: s.genderCounts()})) })
+  } else {
+    if (lobby.mode === 'host') lobby.withdraw(session.code)
+    lobby.open('browse') // stay in the lobby so friends and the Online list still see me
   }
+  if (session.settings) social.setRoom({code: session.code, name: session.settings.name, isPrivate: session.settings.isPrivate})
 }
 
 function leaveRoom(quiet) {
@@ -345,6 +401,9 @@ function renderRoomHead() {
   $('#r-topic').textContent = st?.topic || ''
   $('#r-private').classList.toggle('hidden', !st?.isPrivate)
   $('#r-count').textContent = `👥 ${session.members.size}/${st?.maxPeople ?? '?'}`
+  const lims = Object.entries(st?.slots || {})
+  $('#r-slots').classList.toggle('hidden', !lims.length)
+  if (lims.length) { const c = session.genderCounts(); $('#r-slots').textContent = lims.map(([b, n]) => `${GENDER_BUCKETS[b]} ${c[b] || 0}/${n}`).join(' · ') }
   const host = session.isHost
   $('#host-tools').classList.toggle('hidden', !host || !st)
   if (host && st && document.activeElement?.closest('#host-tools') == null) {
@@ -352,10 +411,11 @@ function renderRoomHead() {
     $('#h-turn').value = st.turnSeconds
     $('#h-ctrls').value = st.controllers
     $('#h-rotate').checked = st.rotate
+    fillSlots('#h-slots', st.slots)
   }
 }
 $('#h-save').onclick = () => {
-  session?.updateSettings({maxPeople: $('#h-max').value, turnSeconds: $('#h-turn').value, controllers: $('#h-ctrls').value, rotate: $('#h-rotate').checked})
+  session?.updateSettings({maxPeople: $('#h-max').value, turnSeconds: $('#h-turn').value, controllers: $('#h-ctrls').value, rotate: $('#h-rotate').checked, slots: readSlots('#h-slots')})
   toast('Room settings saved')
 }
 
@@ -397,6 +457,7 @@ function renderPeople() {
         el('button', {class: 'btn small ghost', title: vMuted ? 'Unmute their voice' : 'Mute their voice', onclick: () => { voice.toggleMute(m.id, p.uid || m.id); renderPeople() }}, vMuted ? '🔇' : '🔊'),
         vol.el) : null,
       session.isHost ? hostPickRow(m) : null,
+      !m.self && p.uid && social.status(p.uid) !== 'friend' ? el('div', {class: 'pick-row'}, friendButton(p.uid, m.name)) : null,
       p.about ? el('div', {class: 'about'}, p.about) : null,
       el('div', {class: 'toys'}, m.toys?.length ? '🔌 ' + m.toys.join(', ') : 'No toys connected'),
       feats.length ? el('div', {class: 'feat-tags'}, feats.map(f => el('span', {}, FEATURE_LABELS[f] || f))) : null))
@@ -1614,9 +1675,125 @@ function animateToys() {
   requestAnimationFrame(animateToys)
 }
 
+// ---------------- profile, friends and who's online ----------------
+let soTab = 'profile'
+function openSocial(tab = soTab) {
+  soTab = tab
+  $('#social-modal').classList.remove('hidden')
+  renderSocial()
+}
+$('#social-btn').onclick = () => openSocial(social.requestCount ? 'friends' : soTab)
+$('#social-close').onclick = () => $('#social-modal').classList.add('hidden')
+$('#social-modal').onclick = e => { if (e.target.id === 'social-modal') $('#social-close').click() }
+$$('.so-tab').forEach(b => b.onclick = () => { soTab = b.dataset.so; renderSocial() })
+$('#so-edit').onclick = () => { $('#social-modal').classList.add('hidden'); openProfile() }
+$('#so-copy').onclick = async () => {
+  try { await navigator.clipboard.writeText(profile.uid); toast('Friend code copied') } catch { prompt('Your friend code', profile.uid) }
+}
+$('#so-visible').onchange = e => social.setSetting('visible', e.target.checked)
+$('#so-fjoin').onchange = e => social.setSetting('friendsJoin', e.target.checked)
+$('#so-add').onsubmit = async e => {
+  e.preventDefault()
+  const code = $('#so-add-code').value.trim()
+  if (!code) return
+  const r = await social.request(code, {name: social.online.get(code)?.name || 'Friend code ' + code.slice(0, 8)})
+  toast({sent: 'Friend request sent', queued: 'They’re not online: the request is sent when they are', friends: 'You’re already friends', self: 'That’s your own code'}[r] || '')
+  $('#so-add-code').value = ''
+}
+$('#so-g').replaceChildren(el('option', {value: ''}, 'Any gender'), ...Object.entries(GENDER_BUCKETS).map(([k, v]) => el('option', {value: k}, v)))
+$('#so-q').oninput = () => renderSocial()
+$('#so-g').onchange = () => renderSocial()
+$('#so-where').onchange = () => renderSocial()
+
+// where someone is, and a button to go there
+function whereOf(o) {
+  if (!o || o.hidden) return {text: 'Offline'}
+  if (o.status !== 'room') return {text: 'In the lobby'}
+  if (o.room?.code) return {text: `In ${o.room.isPrivate ? '🔒 ' : ''}${o.room.name || 'a room'}`, code: o.room.code}
+  return {text: 'In a private room'}
+}
+function personRow(p, acts, sub) {
+  return el('div', {class: 'so-row'},
+    el('span', {class: 'av'}, p.avatar || '🙂'),
+    el('div', {class: 'grow'}, el('b', {style: `color:${p.color || 'inherit'}`}, p.name || 'Someone'),
+      el('div', {class: 'muted small'}, sub)),
+    el('div', {class: 'acts'}, acts))
+}
+const joinBtn = code => code && code !== session?.code
+  ? el('button', {class: 'btn small primary', onclick: () => { $('#social-modal').classList.add('hidden'); enterRoom(code) }}, 'Join') : null
+function friendButton(uid, name) {
+  const st = social.status(uid)
+  if (st === 'friend') return el('span', {class: 'muted small'}, '💞 Friends')
+  if (st === 'outgoing') return el('button', {class: 'btn small ghost', onclick: () => social.cancel(uid)}, '⏳ Requested · cancel')
+  if (st === 'incoming') return el('button', {class: 'btn small primary', onclick: () => social.accept(uid).then(() => toast(`You and ${name} are friends`))}, '✅ Accept')
+  return el('button', {class: 'btn small', onclick: async () => {
+    const known = social.online.get(uid)
+    const r = await social.request(uid, known ? undefined : {name, avatar: session?.order.find(m => m.profile?.uid === uid)?.profile?.avatar})
+    toast(r === 'sent' ? `Friend request sent to ${name}` : r === 'queued' ? 'Request saved: it’s sent when they’re online' : '')
+  }}, '➕ Add friend')
+}
+function renderSocial() {
+  const n = social.requestCount
+  $('#social-badge').textContent = n; $('#social-badge').classList.toggle('hidden', !n)
+  $('#so-req').textContent = n; $('#so-req').classList.toggle('hidden', !n)
+  const online = [...social.online.values()].filter(o => !o.hidden && o.name)
+  $('#so-online-n').textContent = `(${online.length})`
+  if ($('#social-modal').classList.contains('hidden')) return
+  $$('.so-tab').forEach(b => b.classList.toggle('active', b.dataset.so === soTab))
+  $$('[data-so-pane]').forEach(p => p.classList.toggle('hidden', p.dataset.soPane !== soTab))
+
+  if (soTab === 'profile') {
+    const g = genderLabel(profile)
+    $('#so-me').replaceChildren(el('div', {class: 'big-av'}, profile.avatar),
+      el('div', {class: 'grow'}, el('h3', {style: `margin:0;color:${profile.color}`}, profile.name),
+        el('div', {class: 'muted small'}, [g, ROLES[profile.role]].filter(Boolean).join(' · ')),
+        profile.about ? el('div', {class: 'small'}, profile.about) : null,
+        el('div', {class: 'muted small'}, `${Object.keys(social.data.friends).length} friends · ${session ? whereOf({status: 'room', room: {code: session.code, name: session.settings?.name}}).text : 'In the lobby'}`)))
+    $('#so-code').textContent = profile.uid
+    $('#so-fp').textContent = social.fp || '…'
+    $('#so-visible').checked = social.settings.visible
+    $('#so-fjoin').checked = social.settings.friendsJoin
+    $('#so-recent').replaceChildren(...(profile.recent.length ? profile.recent.map(r => el('button', {class: 'btn small', onclick: () => { $('#social-modal').classList.add('hidden'); enterRoom(r.code) }}, r.name || r.code)) : [el('span', {class: 'muted small'}, 'None yet')]))
+  }
+
+  if (soTab === 'friends') {
+    const inc = Object.values(social.data.incoming)
+    $('#so-incoming').replaceChildren(...(inc.length ? [el('h3', {class: 'small'}, `Friend requests (${inc.length})`), el('div', {class: 'so-list'}, inc.map(r =>
+      personRow(r, [
+        el('button', {class: 'btn small primary', onclick: () => social.accept(r.uid).then(() => toast(`You and ${r.name} are friends`))}, '✅ Accept'),
+        el('button', {class: 'btn small ghost', onclick: () => social.decline(r.uid)}, 'Decline')
+      ], `Key check ${r.fp || '?'} · ${new Date(r.at).toLocaleDateString()}`)))] : []))
+    const fr = Object.values(social.data.friends).sort((a, b) => (social.isOnline(b.uid) - social.isOnline(a.uid)) || a.name.localeCompare(b.name))
+    $('#so-fcount').textContent = `(${fr.length})`
+    $('#so-friends').replaceChildren(...(fr.length ? fr.map(f => {
+      const o = social.online.get(f.uid)
+      const w = whereOf(o)
+      return personRow(f, [joinBtn(w.code), el('button', {class: 'btn small ghost', title: 'Remove friend', onclick: () => { if (confirm(`Remove ${f.name} from your friends?`)) social.remove(f.uid) }}, '✕')],
+        el('span', {}, el('span', {class: 'dot' + (o && !o.hidden ? ' on' : '')}), w.text))
+    }) : [el('div', {class: 'muted small'}, 'No friends yet. Add people from the Online list, the People list in a room, or with their friend code.')]))
+    const out = Object.values(social.data.outgoing)
+    $('#so-outgoing').replaceChildren(...(out.length ? [el('h3', {class: 'small'}, 'Sent requests'), el('div', {class: 'so-list'}, out.map(r =>
+      personRow(r, [el('button', {class: 'btn small ghost', onclick: () => social.cancel(r.uid)}, 'Cancel')], r.sent ? 'Waiting for an answer' : 'Waiting for them to come online')))] : []))
+  }
+
+  if (soTab === 'online') {
+    const q = $('#so-q').value.trim().toLowerCase(), g = $('#so-g').value, where = $('#so-where').value
+    const list = online.filter(o => (!q || o.name.toLowerCase().includes(q)) && (!g || genderBucket(o.gender) === g) && (!where || o.status === where))
+      .sort((a, b) => (social.status(b.uid) === 'friend') - (social.status(a.uid) === 'friend') || a.name.localeCompare(b.name))
+    $('#so-online').replaceChildren(...(list.length ? list.map(o => {
+      const w = whereOf(o)
+      return personRow(o, [joinBtn(w.code), friendButton(o.uid, o.name)], [genderLabel(o), ROLES[o.role] && o.role !== 'both' ? ROLES[o.role] : '', w.text].filter(Boolean).join(' · '))
+    }) : [el('div', {class: 'muted small'}, online.length ? 'Nobody matches.' : 'Nobody else is online right now.')]))
+  }
+}
+social.on('change', () => { renderSocial(); renderPeople() })
+social.on('online', renderSocial)
+social.on('notice', t => toast(t))
+
 // ---------------- start ----------------
 async function start() {
   renderNameBtn()
+  renderSocial()
   renderToyFields()
   renderToys()
   renderPatterns()

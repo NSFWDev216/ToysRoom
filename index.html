@@ -31,6 +31,7 @@
   <button class="logo" id="home-btn" title="Lobby">Toy Rooms</button>
   <div class="top-right">
     <span id="net-pill" class="pill" title="How peers find each other">P2P</span>
+    <button id="social-btn" class="btn small ghost" title="Profile, friends and who's online">💞<span class="hide-s"> Friends</span> <span id="social-badge" class="badge hidden">0</span></button>
     <button id="name-btn" class="btn small ghost" title="My profile"><span id="name-avatar">👤</span> <span id="name-label">Guest</span></button>
     <button id="toys-btn" class="btn small" title="Connect your toys">🔌 My toys <span id="toy-count" class="badge">0</span></button>
   </div>
@@ -79,6 +80,11 @@
       <label class="check" style="align-self:end"><input type="checkbox" id="c-rotate" checked> Rotate controllers on a timer</label>
     </div>
     <p class="muted small">With more than one controller, everyone else is split evenly between them.</p>
+    <details class="slots-box">
+      <summary>Gender limits (optional)</summary>
+      <p class="muted small">How many of each may join, e.g. 4 men and 4 women in a room of 8. Leave a box empty for no limit. People choose their gender in their profile.</p>
+      <div class="grid4 slots" id="c-slots"></div>
+    </details>
     <label class="check"><input type="checkbox" id="c-private"> Private: hide from the public list, invite code only</label>
     <div class="row gap">
       <button class="btn primary">Create &amp; enter</button>
@@ -96,6 +102,27 @@
       <h2>Public rooms</h2>
       <span id="lobby-status" class="muted small">Looking for rooms…</span>
     </div>
+    <div class="room-filters">
+      <input id="rl-q" type="search" placeholder="Search rooms by name or topic" aria-label="Search rooms" autocomplete="off">
+      <select id="rl-space" aria-label="Show">
+        <option value="all">All rooms</option>
+        <option value="space">Rooms with space</option>
+        <option value="me" selected>Rooms with space for me</option>
+      </select>
+      <select id="rl-gender" aria-label="Gender limits">
+        <option value="">Any gender mix</option>
+        <option value="limits">Only rooms with gender limits</option>
+        <option value="none">Only rooms without limits</option>
+      </select>
+      <select id="rl-sort" aria-label="Sort">
+        <option value="busy">Most people</option>
+        <option value="quiet">Fewest people</option>
+        <option value="name">Name A–Z</option>
+        <option value="space">Most free places</option>
+      </select>
+      <button id="rl-random" class="btn primary">🎲 Join a random room</button>
+    </div>
+    <div id="rl-note" class="muted small"></div>
     <div id="room-list" class="room-list"></div>
   </div>
 </section>
@@ -110,6 +137,7 @@
         <span id="r-private" class="pill hidden">🔒 Private</span>
         <span class="pill">Code <b id="r-code" class="mono"></b></span>
         <span class="pill" id="r-count">1/8</span>
+        <span class="pill hidden" id="r-slots"></span>
       </div>
     </div>
     <div class="col gap-s">
@@ -336,6 +364,8 @@
             <label>Controllers <input id="h-ctrls" type="number" min="1" max="10"></label>
             <label class="check" style="align-self:end"><input type="checkbox" id="h-rotate"> Rotate on a timer</label>
           </div>
+          <div class="label small">Gender limits (empty = no limit)</div>
+          <div class="grid4 slots" id="h-slots"></div>
           <button id="h-save" class="btn small">Save</button>
           <div class="pick-box">
             <b class="small">Who can control</b>
@@ -414,6 +444,57 @@
   </div>
 </div>
 <button id="sc-show" class="btn small sc-show hidden">🖼 Scrolller preview</button>
+
+<div id="social-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="social-title">
+  <div class="modal-card wide social">
+    <div class="row between"><h2 id="social-title">💞 People</h2><button type="button" id="social-close" class="btn small ghost" aria-label="Close">✕</button></div>
+    <div class="seg three" role="tablist">
+      <button class="so-tab active" data-so="profile">🙂 Profile</button>
+      <button class="so-tab" data-so="friends">💞 Friends <span id="so-req" class="badge hidden">0</span></button>
+      <button class="so-tab" data-so="online">🟢 Online <span id="so-online-n" class="muted small"></span></button>
+    </div>
+
+    <div data-so-pane="profile">
+      <div id="so-me" class="so-card"></div>
+      <div class="row gap wrap">
+        <button id="so-edit" class="btn small primary">✏️ Edit profile</button>
+        <button id="so-copy" class="btn small">📋 Copy my friend code</button>
+      </div>
+      <p class="muted small">Your friend code: <span id="so-code" class="mono"></span><br>Key check: <span id="so-fp" class="mono"></span> (friends see this too, so you can make sure it's really you)</p>
+      <h3 class="small">Privacy</h3>
+      <label class="check small"><input type="checkbox" id="so-visible"> Show me in the Online list (friends always see you)</label>
+      <label class="check small"><input type="checkbox" id="so-fjoin"> Friends can see and join my private rooms</label>
+      <h3 class="small">Recent rooms</h3>
+      <div id="so-recent" class="row gap wrap"></div>
+      <p class="muted small">Profile, friends and requests are saved only in this browser. Use Export in Edit profile to move them to another device.</p>
+    </div>
+
+    <div data-so-pane="friends" class="hidden">
+      <form id="so-add" class="row gap">
+        <input id="so-add-code" class="grow" placeholder="Paste a friend code to add someone" aria-label="Friend code" autocomplete="off" spellcheck="false">
+        <button class="btn small primary">➕ Add</button>
+      </form>
+      <div id="so-incoming"></div>
+      <h3 class="small">Friends <span id="so-fcount" class="muted"></span></h3>
+      <div id="so-friends" class="so-list"></div>
+      <div id="so-outgoing"></div>
+    </div>
+
+    <div data-so-pane="online" class="hidden">
+      <div class="row gap wrap">
+        <input id="so-q" class="grow" type="search" placeholder="Search names" aria-label="Search people">
+        <select id="so-g" aria-label="Gender"></select>
+        <select id="so-where" aria-label="Where">
+          <option value="">Anywhere</option>
+          <option value="lobby">In the lobby</option>
+          <option value="room">In a room</option>
+        </select>
+      </div>
+      <div id="so-online" class="so-list"></div>
+      <p class="muted small">Everyone with Toy Rooms open right now. People can hide from this list in their profile settings.</p>
+    </div>
+  </div>
+</div>
 
 <div id="pad-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="pad-title">
   <div class="modal-card">

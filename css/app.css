@@ -399,3 +399,32 @@ input[hidden], [hidden] { display: none !important; }
 .sc-show { position: fixed; left: 16px; bottom: 16px; z-index: 60; }
 @media (max-width: 600px) { .sc-mini { left: 8px; right: 8px; } .sc-body { height: 50vh; } }
 .fm-head .grow { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* lobby search & filters */
+.room-filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 6px; }
+.room-filters input { flex: 1 1 220px; }
+.room-filters select { flex: 0 1 auto; }
+#rl-random { flex: 0 0 auto; }
+.room-item .gtags { display: flex; flex-wrap: wrap; gap: 4px; }
+.room-item .gtags span { font-size: .72rem; background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: .05rem .5rem; color: var(--muted); }
+.room-item .gtags span.full { color: #ff8a8a; border-color: #ff8a8a55; }
+.grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.slots label { font-size: .8rem; }
+.slots input { width: 100%; }
+.slots-box summary { cursor: pointer; color: var(--muted); margin: 6px 0; }
+@media (max-width: 600px) { .grid4 { grid-template-columns: 1fr 1fr; } .hide-s { display: none; } }
+
+/* profile / friends / online */
+.seg.three { grid-template-columns: repeat(3, 1fr); }
+.so-tab { background: none; border: 0; border-radius: 999px; padding: .5rem; min-height: 40px; cursor: pointer; color: var(--muted); }
+.so-tab.active { background: #3f2f5a; color: var(--text); font-weight: 600; }
+.so-card { display: flex; gap: 14px; align-items: center; background: var(--bg2); border-radius: 16px; padding: 14px; margin-bottom: 10px; }
+.so-card .big-av { font-size: 2.6rem; width: 64px; height: 64px; display: grid; place-items: center; background: var(--card); border-radius: 50%; }
+.so-list { display: grid; gap: 6px; margin: 6px 0 12px; }
+.so-row { display: flex; align-items: center; gap: 10px; background: var(--bg2); border-radius: 12px; padding: 8px 10px; }
+.so-row .av { font-size: 1.4rem; }
+.so-row .grow { min-width: 0; }
+.so-row .grow b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.so-row .acts { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #666; margin-right: 4px; vertical-align: middle; }
+.dot.on { background: #3ddc84; box-shadow: 0 0 6px #3ddc84; }

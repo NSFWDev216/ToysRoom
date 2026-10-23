@@ -8,7 +8,7 @@
 import {openRoom} from './net.js'
 import {CONFIG} from './config.js'
 import {packOutputs, unpackOutputs, zeroOutputs, CHANNEL_KEYS} from './features.js'
-import {cleanPublicProfile} from './profile.js'
+import {cleanPublicProfile, genderBucket, GENDER_BUCKETS} from './profile.js'
 
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 export function makeCode(n = 8) {
@@ -29,8 +29,34 @@ export function cleanSettings(s = {}) {
     controllers: clamp(Math.round(+s.controllers || 1), 1, L.maxControllers),
     rotate: s.rotate !== false,
     isPrivate: !!s.isPrivate,
-    topic: cleanText(s.topic, 80)
+    topic: cleanText(s.topic, 80),
+    slots: cleanSlots(s.slots, clamp(Math.round(+s.maxPeople || CONFIG.defaults.maxPeople), 2, L.maxPeople))
   }
+}
+
+// Per-gender limits: {women: 4, men: 4}. A group that isn't listed has no limit of its own.
+export function cleanSlots(slots, max) {
+  const out = {}
+  if (slots && typeof slots === 'object') {
+    for (const b of Object.keys(GENDER_BUCKETS)) {
+      const v = slots[b]
+      if (v === '' || v === null || v === undefined || !Number.isFinite(+v)) continue
+      out[b] = clamp(Math.round(+v), 0, max)
+    }
+  }
+  return out
+}
+// Room listing: how many of each gender group are in it.
+export function cleanCounts(c) {
+  const out = {}
+  for (const b of Object.keys(GENDER_BUCKETS)) out[b] = clamp((c && c[b]) | 0, 0, 999)
+  return out
+}
+// Is there a free place in this room (a lobby listing) for someone of this gender group?
+export function hasSpaceFor(room, bucket) {
+  if (room.count >= room.maxPeople) return false
+  const lim = room.slots?.[bucket]
+  return lim === undefined || (room.gcount?.[bucket] || 0) < lim
 }
 
 const FEATS = new Set([...CHANNEL_KEYS, 'range'])
@@ -114,7 +140,7 @@ export class RoomSession extends Emitter {
       this.emit('members')
       this.tick()
     })
-    n.on('full', (d, id) => { if (this.isOlder(id, this.selfId)) this.kick('full') })
+    n.on('full', (d, id) => { if (this.isOlder(id, this.selfId)) this.kick(d?.r === 'gender' ? 'gender' : 'full') })
     n.onStream((stream, id, meta) => this.emit('stream', stream, id, meta))
 
     this.timer = setInterval(() => this.tick(), 500)
@@ -164,14 +190,35 @@ export class RoomSession extends Emitter {
   isControllerId(id) { return this.controllers.includes(id) }
   get remaining() { return Math.max(0, this.endsAt - Date.now()) }
 
+  bucketOf(id) {
+    const m = this.members.get(id)
+    return genderBucket(m?.self ? this.me.profile?.gender : m?.profile?.gender)
+  }
+  // how many of each gender group are here
+  genderCounts() {
+    const c = {}
+    for (const id of this.members.keys()) { const b = this.bucketOf(id); c[b] = (c[b] || 0) + 1 }
+    return c
+  }
+  // Is this member beyond the room's limit for their gender group? (latest arrivals go first)
+  overGenderLimit(id) {
+    const b = this.bucketOf(id), lim = this.settings?.slots?.[b]
+    if (lim === undefined) return false
+    const same = this.order.filter(m => this.bucketOf(m.id) === b)
+    return same.findIndex(m => m.id === id) >= lim
+  }
+
   enforceMax(newId) {
     if (!this.settings) return
     const order = this.order
     const myIndex = order.findIndex(m => m.id === this.selfId)
     if (myIndex >= this.settings.maxPeople) return this.kick('full')
-    // the host tells newcomers beyond the limit to go
+    if (this.overGenderLimit(this.selfId) && !this.isHost) return this.kick('gender')
+    // the host tells newcomers beyond the limits to go
+    if (!this.isHost || !newId) return
     const idx = order.findIndex(m => m.id === newId)
-    if (this.isHost && idx >= this.settings.maxPeople) this.net.send('full', {}, newId)
+    if (idx >= this.settings.maxPeople) this.net.send('full', {}, newId)
+    else if (this.overGenderLimit(newId)) this.net.send('full', {r: 'gender'}, newId)
   }
 
   kick(reason) {
@@ -444,12 +491,13 @@ export class Lobby extends Emitter {
   }
   attach(net) {
     this.net = net
+    this.emit('net', net)
     net.on('ann', (d, id) => {
       if (!d?.code) return
       const code = String(d.code).replace(/[^A-Z0-9]/g, '').slice(0, 16)
       this.rooms.set(code, {
         code, from: id, seen: Date.now(),
-        ...cleanSettings(d), count: clamp(d.count | 0, 0, 999)
+        ...cleanSettings(d), count: clamp(d.count | 0, 0, 999), gcount: cleanCounts(d.gcount)
       })
       this.emit('rooms')
     })
@@ -471,6 +519,7 @@ export class Lobby extends Emitter {
   withdraw(code) { this.net?.send('gone', {code}); this.announce = null }
   list() { return [...this.rooms.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)) }
   close() {
+    if (this.net) this.emit('closed', this.net)
     clearInterval(this.timer)
     this.token = null
     this.rooms.clear()

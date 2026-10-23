@@ -289,6 +289,57 @@ Store the token as the Worker secret `LOVENSE_TOKEN`, then put the Worker URL in
 `authTokenEndpoint`. In the Lovense developer dashboard, also allow your site's
 domain.
 
+## Profile, friends and who's online (💞 button)
+
+- **Profile**: your card as others see it, your **friend code** (to give to people),
+  a short **key check** code, privacy switches and your recent rooms. “Edit profile”
+  opens the same profile editor as before.
+- **Friends**: add people from the Online list, from the People list in a room, or by
+  pasting their friend code. They get a request they can accept or decline. A request
+  to someone who is offline is kept and sent when they next come online. Friends show
+  a green dot when online, where they are, and a **Join** button for their room
+  (their private room too, if they allow it).
+- **Online**: everyone who has Toy Rooms open right now, with search, a gender filter
+  and lobby / in-a-room filter. People can hide from this list (“Show me in the Online
+  list” off); their friends still see them.
+- Everything is stored **only in this browser** (localStorage, like the profile):
+  friends, requests and a key pair made for you the first time. Friends are recognised
+  by that key, so nobody can take over a friend's place by copying their name or code.
+  Use Export / Import in the profile editor to move your profile; friends are kept per
+  browser.
+- It works over the same peer-to-peer lobby as the room list, so there is still no
+  server. Everyone stays connected to the lobby while in a room so friends can find
+  them. Like the room list, it is meant for a community of up to a few hundred people
+  online at once.
+
+## Finding rooms: search, filters, gender limits and random join
+
+- The public list has a **search** box (name and topic), a **show** filter (all rooms,
+  rooms with space, rooms with space for me), a **gender limits** filter and **sort**
+  (most people, fewest people, name, most free places).
+- **Gender limits**: when creating a room (and later in Room settings) the host can
+  set how many women, men, couples and non-binary & others may join, for example 4 men
+  and 4 women in a room of 8. An empty box means no limit for that group. Rooms show
+  how full each group is, and anyone beyond their group's limit is turned away with
+  a message. Trans women count as women and trans men as men; “Prefer not to say” and
+  self-described genders count as “non-binary & others”. Gender is what each person
+  picks in their own profile; it can't be checked.
+- **🎲 Join a random room** picks a public room that has a free place for your gender.
+
+## Lovense Bluetooth: what it needs
+
+- Chrome or Edge on Windows, macOS, Android or ChromeOS. On Linux, turn on
+  `chrome://flags/#enable-experimental-web-platform-features`. Safari and every browser
+  on iPhone / iPad have no Web Bluetooth: use Lovense Remote's Game Mode there.
+- The site must be opened over **https://** (GitHub Pages is) or on **localhost**.
+  Opening it as `http://192.168…` from another device blocks Bluetooth.
+- Turn the toy on and **close Lovense Remote / Lovense Connect on every phone and
+  computer** first: a toy only talks to one app at a time, and a toy that is already
+  connected doesn't show up in the picker.
+- Tap Connect in My toys straight away and pick the toy (it shows as `LVS-…`). The
+  app now knows every Lovense Bluetooth service variant, retries the first connection,
+  and says plainly what went wrong if it still fails.
+
 ## Gamepad
 
 1. Connect the pad by USB or Bluetooth, then **press any button on it** (browsers only
@@ -420,6 +471,7 @@ including YouTube and Spotify, use Screen mode above.)
 - `js/voice.js`: voice chat
 - `js/media.js`: YouTube / Spotify / Twitch / video players and link parsing for music and the live feed
 - `js/gamepad.js`: gamepad support and its configurable bindings
+- `js/social.js`: friends, friend requests and the Online list (signed presence over the lobby)
 - `patterns/`: the built-in pattern catalog
 - `tests/import-test.html`: pattern import tests; open it from the running site (for example `http://localhost:8000/tests/import-test.html`) and every line should say PASS
 
